@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XAIO Website</title>
+    <meta name="description" content="Website generated with XAIO" />
+      <!-- XAIO Console Interceptor v3 - must run before any other scripts -->
+    <script>
+// XAIO Console Interceptor v3 - No stack traces for non-errors
+// VERSION_MARKER: v3
+(function() {
+  // CRITICAL: Get ORIGINAL console methods FIRST, before any logging
+  // If old interceptor already ran, restore from stored originals
+  // Otherwise, capture fresh originals (but bind them to avoid losing context)
+  let originalConsole;
+  if (window.__XAIO_ORIGINAL_CONSOLE__) {
+    // Old interceptor stored originals - use them (these are the REAL browser console)
+    originalConsole = window.__XAIO_ORIGINAL_CONSOLE__;
+  } else {
+    // No old interceptor - capture fresh originals
+    const consoleObj = window.console || console;
+    originalConsole = {
+      log: consoleObj.log ? consoleObj.log.bind(consoleObj) : function(){},
+      error: consoleObj.error ? consoleObj.error.bind(consoleObj) : function(){},
+      warn: consoleObj.warn ? consoleObj.warn.bind(consoleObj) : function(){},
+      info: consoleObj.info ? consoleObj.info.bind(consoleObj) : function(){},
+      debug: consoleObj.debug ? consoleObj.debug.bind(consoleObj) : function(){}
+    };
+    // Store globally for future replacements
+    window.__XAIO_ORIGINAL_CONSOLE__ = originalConsole;
+  }
+
+  // CRITICAL: Set version IMMEDIATELY to mark this as v3
+  window.__XAIO_CONSOLE_INTERCEPTOR_VERSION__ = 'v3';
+
+  // Check if v3 is already running (duplicate check)
+  if (window.__XAIO_CONSOLE_INTERCEPTED__ && window.__XAIO_CONSOLE_INTERCEPTOR_VERSION__ === 'v3') {
+    const scripts = document.querySelectorAll('#xaio-console-interceptor');
+    if (scripts.length > 1) {
+      const thisScript = Array.from(scripts)[scripts.length - 1];
+      if (thisScript && thisScript === document.currentScript) {
+        thisScript.remove();
+        return;
+      }
+    }
+  }
+
+  // FORCE clear old flag to replace old interceptor
+  try {
+    window.__XAIO_CONSOLE_INTERCEPTED__ = false;
+    delete window.__XAIO_CONSOLE_INTERCEPTED__;
+  } catch(e) {}
+
+  // Set flag for new version
+  window.__XAIO_CONSOLE_INTERCEPTED__ = true;
+
+  const messageQueue = [];
+  let flushTimer = null;
+
+  function serializeArg(arg) {
+    if (arg === null) return 'null';
+    if (arg === undefined) return 'undefined';
+    if (typeof arg === 'string') return arg;
+    if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
+    if (arg instanceof Error) {
+      return arg.toString() + (arg.stack ? '\n' + arg.stack : '');
+    }
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
+  }
+
+  function flushMessages() {
+    if (messageQueue.length === 0) return;
+
+    const messages = [...messageQueue];
+    messageQueue.length = 0;
+    flushTimer = null;
+
+    try {
+      window.parent.postMessage({
+        type: 'XAIO_CONSOLE_MESSAGES',
+        messages: messages
+      }, '*');
+    } catch (err) {
+      originalConsole.error('[XAIO Console Interceptor] Failed to send messages:', err);
+    }
+  }
+
+  function cleanStack(stack) {
+    if (!stack) return null;
+
+    // Filter out interceptor's internal frames
+    const lines = stack.split('\n');
+    const filtered = lines.filter(line => {
+      // Remove frames from interceptor code
+      const lowerLine = line.toLowerCase();
+      return !lowerLine.includes('sendtoparent') &&
+             !lowerLine.includes('console.log') &&
+             !lowerLine.includes('console.error') &&
+             !lowerLine.includes('console.warn') &&
+             !lowerLine.includes('console.info') &&
+             !lowerLine.includes('console.debug') &&
+             !lowerLine.includes('xaio') &&
+             !lowerLine.includes('interceptor');
+    });
+
+    // Remove the "Error" line if present (first line of stack)
+    if (filtered.length > 0 && filtered[0].trim().toLowerCase().startsWith('error')) {
+      filtered.shift();
+    }
+
+    return filtered.length > 0 ? filtered.join('\n') : null;
+  }
+
+  function sendToParent(level, args) {
+    try {
+      const message = {
+        level: level,
+        message: args.map(serializeArg),
+        timestamp: new Date().toISOString(),
+        url: window.location.href
+      };
+
+      // Only include stack trace for actual Error objects with stack traces
+      // Regular console.log/warn/info/debug don't need stack traces
+      if (level === 'error' && args[0] instanceof Error && args[0].stack) {
+        // Use the actual error's stack and clean it
+        const cleaned = cleanStack(args[0].stack);
+        if (cleaned) {
+          message.stack = cleaned;
+        }
+      } else {
+        // Explicitly ensure no stack trace for non-error logs
+        message.stack = undefined;
+      }
+
+      messageQueue.push(message);
+
+      // Batch messages: send every 100ms or when queue reaches 10
+      if (messageQueue.length >= 10) {
+        flushMessages();
+      } else if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          flushMessages();
+        }, 100);
+      }
+    } catch (err) {
+      originalConsole.error('[XAIO Console Interceptor] Failed to queue message:', err);
+    }
+  }
+
+  // Override console methods IMMEDIATELY (after helper functions are defined)
+  // CRITICAL: Override must happen BEFORE any other scripts can call console.log
+  try {
+    console.log = function(...args) {
+      originalConsole.log(...args);
+      sendToParent('log', args);
+    };
+    console.error = function(...args) {
+      originalConsole.error(...args);
+      sendToParent('error', args);
+    };
+    console.warn = function(...args) {
+      originalConsole.warn(...args);
+      sendToParent('warn', args);
+    };
+    console.info = function(...args) {
+      originalConsole.info(...args);
+      sendToParent('info', args);
+    };
+    console.debug = function(...args) {
+      originalConsole.debug(...args);
+      sendToParent('debug', args);
+    };
+  } catch (err) {
+    originalConsole.error('[XAIO Console Interceptor] Failed to override console:', err);
+  }
+
+  // Helper to extract path from URL
+  function getPath(url) {
+    try {
+      if (typeof url === 'string') {
+        const urlObj = new URL(url, window.location.origin);
+        return urlObj.pathname + urlObj.search;
+      }
+      return String(url);
+    } catch {
+      return String(url);
+    }
+  }
+
+  // Helper to convert Headers object to plain object
+  function headersToObject(headers) {
+    const obj = {};
+    if (headers && headers.forEach) {
+      headers.forEach((value, key) => {
+        obj[key] = value;
+      });
+    } else if (headers && typeof headers === 'object') {
+      Object.keys(headers).forEach(key => {
+        obj[key] = headers[key];
+      });
+    }
+    return obj;
+  }
+
+  // Helper to format size
+  function formatSize(bytes) {
+    if (!bytes) return null;
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // Network request queue
+  const networkQueue = [];
+  let networkFlushTimer = null;
+
+  function flushNetworkRequests() {
+    if (networkQueue.length === 0) return;
+
+    const requests = [...networkQueue];
+    networkQueue.length = 0;
+    networkFlushTimer = null;
+
+    try {
+      window.parent.postMessage({
+        type: 'XAIO_NETWORK_REQUESTS',
+        requests: requests
+      }, '*');
+    } catch (err) {
+      originalConsole.error('[XAIO Console Interceptor] Failed to send network requests:', err);
+    }
+  }
+
+  function sendNetworkRequest(request) {
+    networkQueue.push(request);
+
+    // Batch network requests: send every 200ms or when queue reaches 5
+    if (networkQueue.length >= 5) {
+      flushNetworkRequests();
+    } else if (!networkFlushTimer) {
+      networkFlushTimer = setTimeout(() => {
+        networkFlushTimer = null;
+        flushNetworkRequests();
+      }, 200);
+    }
+  }
+
+  // Intercept fetch to capture ALL network requests
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || 'unknown';
+    const method = args[1]?.method || 'GET';
+    const headers = args[1]?.headers || {};
+    const body = args[1]?.body;
+
+    const requestStartTime = performance.now();
+    const requestId = Date.now() + Math.random();
+
+    // Extract request body
+    let requestBody = null;
+    if (body) {
+      if (typeof body === 'string') {
+        requestBody = body;
+      } else if (body instanceof FormData) {
+        requestBody = '[FormData]';
+      } else if (body instanceof Blob) {
+        requestBody = '[Blob]';
+      } else {
+        try {
+          requestBody = JSON.stringify(body);
+        } catch (e) {
+          requestBody = String(body);
+        }
+      }
+    }
+
+    const requestHeaders = headers instanceof Headers ? headersToObject(headers) : headers;
+
+    return originalFetch.apply(this, args)
+      .then(async response => {
+        const requestEndTime = performance.now();
+        const duration = requestEndTime - requestStartTime;
+
+        // Clone response to read body without consuming it
+        const clonedResponse = response.clone();
+        let responseBody = null;
+        let responseSize = null;
+
+        try {
+          const contentType = response.headers.get('content-type') || '';
+          const contentLength = response.headers.get('content-length');
+
+          if (contentLength) {
+            responseSize = parseInt(contentLength, 10);
+          }
+
+          // Only read body for reasonable sizes (< 1MB)
+          if (!contentLength || responseSize < 1024 * 1024) {
+            if (contentType.includes('application/json')) {
+              try {
+                responseBody = await clonedResponse.json();
+              } catch (e) {
+                // Not valid JSON
+              }
+            } else if (contentType.includes('text/')) {
+              try {
+                const text = await clonedResponse.text();
+                // Limit text size to 100KB
+                responseBody = text.length > 100000 ? text.substring(0, 100000) + '... [truncated]' : text;
+              } catch (e) {
+                // Can't read as text
+              }
+            }
+          } else {
+            responseBody = '[Response too large]';
+          }
+        } catch (e) {
+          // Body might not be readable
+        }
+
+        const networkRequest = {
+          id: requestId,
+          method: method,
+          url: url,
+          path: getPath(url),
+          status: response.status,
+          statusText: response.statusText,
+          requestHeaders: requestHeaders,
+          responseHeaders: headersToObject(response.headers),
+          requestBody: requestBody,
+          responseBody: responseBody,
+          duration: Math.round(duration),
+          timestamp: new Date().toISOString(),
+          type: response.headers.get('content-type') || 'unknown',
+          size: responseSize,
+          success: response.ok
+        };
+
+        sendNetworkRequest(networkRequest);
+
+        // Still log errors to console
+        if (!response.ok) {
+          sendToParent('error', [new Error(getPath(url) + ' ' + response.status)]);
+        }
+
+        return response;
+      })
+      .catch(error => {
+        const requestEndTime = performance.now();
+        const duration = requestEndTime - requestStartTime;
+
+        const networkRequest = {
+          id: requestId,
+          method: method,
+          url: url,
+          path: getPath(url),
+          status: 0,
+          statusText: 'Network Error',
+          requestHeaders: requestHeaders,
+          requestBody: requestBody,
+          error: error.message,
+          duration: Math.round(duration),
+          timestamp: new Date().toISOString(),
+          type: 'unknown',
+          success: false
+        };
+
+        sendNetworkRequest(networkRequest);
+
+        // Log network errors - compact format
+        sendToParent('error', [new Error(getPath(url) + ' Network error')]);
+        throw error;
+      });
+  };
+
+  // Intercept XMLHttpRequest to capture ALL network requests
+  const originalXHROpen = XMLHttpRequest.prototype.open;
+  const originalXHRSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this._xaioMethod = method;
+    this._xaioUrl = typeof url === 'string' ? url : url?.toString() || 'unknown';
+    this._xaioRequestStartTime = performance.now();
+    this._xaioRequestId = Date.now() + Math.random();
+    return originalXHROpen.apply(this, [method, url, ...rest]);
+  };
+
+  XMLHttpRequest.prototype.send = function(...args) {
+    const xhr = this;
+    const url = xhr._xaioUrl || 'unknown';
+    const method = xhr._xaioMethod || 'GET';
+    const path = getPath(url);
+    const requestStartTime = xhr._xaioRequestStartTime || performance.now();
+    const requestId = xhr._xaioRequestId || Date.now() + Math.random();
+
+    // Extract request body
+    let requestBody = null;
+    if (args[0]) {
+      if (typeof args[0] === 'string') {
+        requestBody = args[0];
+      } else if (args[0] instanceof FormData) {
+        requestBody = '[FormData]';
+      } else if (args[0] instanceof Blob) {
+        requestBody = '[Blob]';
+      } else {
+        try {
+          requestBody = JSON.stringify(args[0]);
+        } catch (e) {
+          requestBody = String(args[0]);
+        }
+      }
+    }
+
+    // Extract request headers
+    const requestHeaders = {};
+    try {
+      const headerString = xhr.getAllResponseHeaders ? '' : '';
+      // XHR doesn't expose request headers easily, so we'll capture what we can
+      if (xhr.setRequestHeader) {
+        // We can't intercept setRequestHeader calls easily, so we'll note that headers exist
+        requestHeaders['[Headers set via setRequestHeader]'] = 'true';
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    xhr.addEventListener('error', function() {
+      const requestEndTime = performance.now();
+      const duration = requestEndTime - requestStartTime;
+
+      const networkRequest = {
+        id: requestId,
+        method: method,
+        url: url,
+        path: path,
+        status: 0,
+        statusText: 'Network Error',
+        requestHeaders: requestHeaders,
+        requestBody: requestBody,
+        error: 'Network error',
+        duration: Math.round(duration),
+        timestamp: new Date().toISOString(),
+        type: 'unknown',
+        success: false
+      };
+
+      sendNetworkRequest(networkRequest);
+      sendToParent('error', [new Error(method + ' ' + path + ' Network error')]);
+    });
+
+    xhr.addEventListener('load', function() {
+      const requestEndTime = performance.now();
+      const duration = requestEndTime - requestStartTime;
+
+      // Extract response headers
+      const responseHeaders = {};
+      try {
+        const headerString = xhr.getAllResponseHeaders() || '';
+        headerString.split('\r\n').forEach(line => {
+          const parts = line.split(': ');
+          if (parts.length === 2) {
+            responseHeaders[parts[0]] = parts[1];
+          }
+        });
+      } catch (e) {
+        // Ignore
+      }
+
+      // Extract response body
+      let responseBody = null;
+      let responseSize = null;
+      try {
+        const contentType = responseHeaders['content-type'] || '';
+        const responseText = xhr.responseText;
+
+        if (responseText) {
+          responseSize = new Blob([responseText]).size;
+
+          // Only include body for reasonable sizes (< 100KB)
+          if (responseSize < 100000) {
+            if (contentType.includes('application/json')) {
+              try {
+                responseBody = JSON.parse(responseText);
+              } catch (e) {
+                responseBody = responseText;
+              }
+            } else {
+              responseBody = responseText;
+            }
+          } else {
+            responseBody = '[Response too large]';
+          }
+        }
+      } catch (e) {
+        // Can't read response
+      }
+
+      const networkRequest = {
+        id: requestId,
+        method: method,
+        url: url,
+        path: path,
+        status: xhr.status,
+        statusText: xhr.statusText || 'OK',
+        requestHeaders: requestHeaders,
+        responseHeaders: responseHeaders,
+        requestBody: requestBody,
+        responseBody: responseBody,
+        duration: Math.round(duration),
+        timestamp: new Date().toISOString(),
+        type: responseHeaders['content-type'] || 'unknown',
+        size: responseSize,
+        success: xhr.status >= 200 && xhr.status < 400
+      };
+
+      sendNetworkRequest(networkRequest);
+
+      if (xhr.status >= 400) {
+        sendToParent('error', [new Error(method + ' ' + path + ' ' + xhr.status)]);
+      }
+    });
+
+    return originalXHRSend.apply(this, args);
+  };
+
+  // Catch unhandled errors
+  window.addEventListener('error', (event) => {
+    // Only capture script errors, not resource loading errors (those are handled by fetch/XHR interceptors)
+    if (event.error) {
+      sendToParent('error', [{
+        type: 'UnhandledError',
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        stack: event.error?.stack
+      }]);
+    }
+  });
+
+  // Catch unhandled promise rejections
+  window.addEventListener('unhandledrejection', (event) => {
+    sendToParent('error', [{
+      type: 'UnhandledPromiseRejection',
+      reason: event.reason instanceof Error ? {
+        message: event.reason.message,
+        stack: event.reason.stack
+      } : String(event.reason)
+    }]);
+  });
+
+  // Flush on page unload
+  window.addEventListener('beforeunload', () => {
+    flushMessages();
+    flushNetworkRequests();
+  });
+
+  // Handle GET_PREVIEW_HTML message from parent window
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'GET_PREVIEW_HTML') {
+      try {
+        const html = document.documentElement.outerHTML;
+
+        window.parent.postMessage({
+          type: 'PREVIEW_HTML_RESPONSE',
+          html: html,
+          url: window.location.href,
+          timestamp: new Date().toISOString()
+        }, '*');
+      } catch (err) {
+        originalConsole.error('[XAIO] Error capturing HTML:', err);
+      }
+    }
+
+    // New: Check for Vite errors in DOM
+    if (event.data?.type === 'CHECK_VITE_ERRORS') {
+      try {
+        const errors = [];
+
+        // Check for vite-error-overlay custom element
+        const errorOverlay = document.querySelector('vite-error-overlay');
+        if (errorOverlay && errorOverlay.shadowRoot) {
+          // Access shadow DOM content
+          const shadowRoot = errorOverlay.shadowRoot;
+          const messageEl = shadowRoot.querySelector('.message') || shadowRoot.querySelector('.message-body');
+          const fileEl = shadowRoot.querySelector('.file');
+
+          if (messageEl) {
+            const messageText = messageEl.textContent || messageEl.innerText;
+
+            // Extract file, line, column from message or file element
+            let file, line, column;
+            const fileMatch = messageText.match(/([^\s]+\.(?:tsx?|jsx?|vue|svelte)):(\d+):(\d+)/);
+            if (fileMatch) {
+              file = fileMatch[1];
+              line = parseInt(fileMatch[2]);
+              column = parseInt(fileMatch[3]);
+            }
+
+            errors.push({
+              message: messageText.trim(),
+              file: file,
+              line: line,
+              column: column
+            });
+          }
+        }
+
+        window.parent.postMessage({
+          type: 'VITE_ERRORS_RESPONSE',
+          errors: errors,
+          timestamp: new Date().toISOString()
+        }, '*');
+      } catch (err) {
+        originalConsole.error('[XAIO] Error checking for Vite errors:', err);
+        window.parent.postMessage({
+          type: 'VITE_ERRORS_RESPONSE',
+          errors: [],
+          error: err.message
+        }, '*');
+      }
+    }
+  });
+
+})();
+
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- XAIO Runtime: Screenshot capture & Design Mode (loaded from dev-server/runner) -->
+    <script>
+      // Load XAIO runtime from dev-server (local) or runner (cloud)
+      (function() {
+        var baseUrl = window.__XAIO_API_URL__ || 'http://localhost:8001';
+        var script = document.createElement('script');
+        script.src = baseUrl + '/static/design-mode-runtime.js';
+        script.onerror = function() {
+          console.log('[XAIO] Runtime not available at', baseUrl);
+        };
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>
