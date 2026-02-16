@@ -59,7 +59,7 @@ export function TodoForm() {
           <Button 
             type="submit" 
             disabled={isSubmitting || !title.trim()}
-            className="bg-amber-500 hover:bg-amber-600 text-white"
+            className="bg-sky-400 hover:bg-sky-500 text-white"
           >
             {isSubmitting ? 'Wird erstellt...' : 'Todo hinzufügen'}
           </Button>
